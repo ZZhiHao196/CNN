@@ -213,17 +213,22 @@ begin
     
     #30;  // Let it start
     
-    // Apply reset
+    // Apply reset and disable read_enable
     rst_n = 0;
+    read_enable = 0;  // Disable read_enable during reset
     #20;
     rst_n = 1;
-    #20;
+    
+    // Wait a few clock cycles for reset to take effect
+    @(posedge clk);
+    @(posedge clk);
     
     if (!weight_valid && flattened_weight_out == 0) begin
         $display("✓ Reset functionality working");
         pass_count = pass_count + 1;
     end else begin
         $display("✗ Reset functionality failed");
+        $display("  weight_valid = %b, flattened_weight_out = %h", weight_valid, flattened_weight_out);
     end
     test_count = test_count + 1;
     

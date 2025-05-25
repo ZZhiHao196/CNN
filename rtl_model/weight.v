@@ -1,4 +1,4 @@
- // CNN weight ROM module
+// CNN weight ROM module
 // 用于存储CNN卷积层权重ROM模块
 // 存储该层的所有预设参数，返回指定通道和filter的权重
 module weight #(
@@ -6,7 +6,7 @@ module weight #(
     parameter INPUT_CHANNELS = 3,
     parameter KERNEL_SIZE = 3,
     parameter WEIGHT_WIDTH = 16,
-    parameter INIT_FILE = "weights.mem"
+    parameter INIT_FILE = "weights_example.mem"
 )
 (
     input clk,
@@ -91,4 +91,4 @@ always @(posedge clk or negedge rst_n) begin
     end
 end
 
-endmodule
+endmodule 
