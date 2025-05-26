@@ -73,10 +73,10 @@ always @(posedge clk or negedge rst_n) begin
             for (j = 0; j < IMG_WIDTH + 2*PADDING; j = j + 1)
                 line_buffer[i][j] <= 0;
     end else if (pixel_valid && current_state != IDLE) begin
-        if (x_pos == 0) begin
+                if (x_pos == 0) begin
             // Clear the line buffer row at the start of each new line
             for (k = 0; k < IMG_WIDTH + 2*PADDING; k = k + 1)
-                line_buffer[y_pos % (KERNEL_SIZE + 1)][k] <= 0;
+                        line_buffer[y_pos % (KERNEL_SIZE + 1)][k] <= 0;
         end
         line_buffer[y_pos % (KERNEL_SIZE + 1)][x_pos + PADDING] <= pixel_in;
     end
@@ -89,11 +89,11 @@ always @(posedge clk or negedge rst_n) begin
         y_window <= 0;
     end else if (current_state == PROCESS && y_window < IMG_HEIGHT) begin
         if (x_window + STRIDE >= IMG_WIDTH) begin
-            x_window <= 0;
-            y_window <= y_window + STRIDE;
-        end else begin
-            x_window <= x_window + STRIDE;
-        end
+                    x_window <= 0;
+                    y_window <= y_window + STRIDE;
+                end else begin
+                    x_window <= x_window + STRIDE;
+                end
     end
 end
 
@@ -121,13 +121,13 @@ always @(posedge clk or negedge rst_n) begin
                     if (src_y >= 0 && src_y < IMG_HEIGHT && 
                         src_x >= 0 && src_x < IMG_WIDTH) begin
                         window_buffer[i][j] <= line_buffer[src_y % (KERNEL_SIZE + 1)][src_x + PADDING];
-                    end else begin
+                        end else begin
                         window_buffer[i][j] <= 0; // Padding
+                        end
                     end
                 end
-            end
-            window_valid <= 1;
-        end
+                window_valid <= 1;
+            end 
     end
 end
 
