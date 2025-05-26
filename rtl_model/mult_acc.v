@@ -1,139 +1,152 @@
+// 多通道乘累加模块 - 同时处理所有输入通道的卷积运算
 module mult_acc #(
     parameter DATA_WIDTH = 8,
     parameter KERNEL_SIZE = 3,
-    parameter ACC_WIDTH = 2*DATA_WIDTH + 4  // 累加器位宽，防止溢出
+    parameter IN_CHANNEL = 3,
+    parameter WEIGHT_WIDTH = 8,
+    parameter ACC_WIDTH = 2*DATA_WIDTH + 4
 )(
-    //全局信号接口
+    // 全局信号接口
     input clk,
     input rst_n,
 
-    //输入数据接口
+    // 多通道输入数据接口
     input window_valid,
-    input [DATA_WIDTH*KERNEL_SIZE*KERNEL_SIZE-1:0] window_in,
+    input [IN_CHANNEL*KERNEL_SIZE*KERNEL_SIZE*DATA_WIDTH-1:0] multi_channel_window_in,
     input weight_valid,
-    input [DATA_WIDTH*KERNEL_SIZE*KERNEL_SIZE-1:0] weight_in,
+    input [IN_CHANNEL*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH-1:0] multi_channel_weight_in,
 
-    //输出数据接口
-    output reg [2*DATA_WIDTH-1:0] conv_out,
+    // 输出数据接口
+    output reg signed [DATA_WIDTH-1:0] conv_out,
     output reg conv_valid
 );
 
-//内部信号声明
-//解包后的窗口数据和权重数据
-reg signed [DATA_WIDTH-1:0]window_data [0:KERNEL_SIZE*KERNEL_SIZE-1];
-reg signed [DATA_WIDTH-1:0]weight_data [0:KERNEL_SIZE*KERNEL_SIZE-1];
+// 内部信号声明
+// 解包后的多通道窗口数据和权重数据
+reg signed [DATA_WIDTH-1:0] channel_window_data [0:IN_CHANNEL-1][0:KERNEL_SIZE*KERNEL_SIZE-1];
+reg signed [WEIGHT_WIDTH-1:0] channel_weight_data [0:IN_CHANNEL-1][0:KERNEL_SIZE*KERNEL_SIZE-1];
 
-
-//流水线阶段1：乘法结果
-reg [2*DATA_WIDTH-1:0]mult_results [0:KERNEL_SIZE*KERNEL_SIZE-1];
+// 流水线阶段1：所有通道的乘法结果
+reg signed [2*DATA_WIDTH-1:0] channel_mult_results [0:IN_CHANNEL-1][0:KERNEL_SIZE*KERNEL_SIZE-1];
 reg stage1_valid;
 
-//流水线阶段2：第一层加法树结果
-reg signed [ACC_WIDTH-1:0]add_level1 [0:4]; //9->5 (4个加法器 + 1个直通)
+// 流水线阶段2：每个通道的卷积结果
+reg signed [ACC_WIDTH-1:0] channel_conv_results [0:IN_CHANNEL-1];
 reg stage2_valid;
 
-//流水线阶段3：第二层加法树结果
-reg signed [ACC_WIDTH-1:0]add_level2 [0:2]; //5->3 (2个加法器 + 1个直通)
+// 流水线阶段3：跨通道累加的第一层
+reg signed [ACC_WIDTH-1:0] partial_sum;
 reg stage3_valid;
 
-//临时变量用于最终计算
-reg signed [ACC_WIDTH-1:0]temp_sum;
+// 临时累加变量
+reg signed [ACC_WIDTH-1:0] temp_sum;
+reg signed [ACC_WIDTH-1:0] temp_channel_sum;
 
-//循环变量
-integer i;
+// 循环变量
+integer ch, i;
 
-//输入数据解包
-always @(*)begin
-    for (i=0;i<KERNEL_SIZE*KERNEL_SIZE;i=i+1)begin
-        window_data[i]=window_in[(i+1)*DATA_WIDTH-1 -:DATA_WIDTH];
-        weight_data[i]=weight_in[(i+1)*DATA_WIDTH-1 -:DATA_WIDTH];
-    end
-end
-
-//流水阶段1：并行乘法
-always @(posedge clk or negedge rst_n)begin
-    if(!rst_n)begin
-        for(i=0;i<KERNEL_SIZE*KERNEL_SIZE;i=i+1)
-            mult_results[i]<=0;
-        stage1_valid<=0;
-    end else begin
-        //并行执行Kernel_Size*Kernel_Size个乘法
-        for (i=0;i<KERNEL_SIZE*KERNEL_SIZE;i=i+1)begin
-          mult_results[i]<=window_data[i]*weight_data[i];
+// 输入数据解包
+always @(*) begin
+    for (ch = 0; ch < IN_CHANNEL; ch = ch + 1) begin
+        for (i = 0; i < KERNEL_SIZE*KERNEL_SIZE; i = i + 1) begin
+            // 解包窗口数据
+            channel_window_data[ch][i] = multi_channel_window_in[
+                (ch*KERNEL_SIZE*KERNEL_SIZE + i + 1)*DATA_WIDTH-1 -: DATA_WIDTH
+            ];
+            // 解包权重数据
+            channel_weight_data[ch][i] = multi_channel_weight_in[
+                (ch*KERNEL_SIZE*KERNEL_SIZE + i + 1)*WEIGHT_WIDTH-1 -: WEIGHT_WIDTH
+            ];
         end
-        stage1_valid<=window_valid && weight_valid;
     end
 end
 
-//流水线阶段2： 第一层加法树（9——>5）
-always @(posedge clk or negedge rst_n)begin
-    if(!rst_n)begin
-        for(i=0;i<5;i=i+1)
-            add_level1[i]<=0;
-        stage2_valid<=0;
+// 流水线阶段1：并行乘法 (所有通道，所有位置)
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        for (ch = 0; ch < IN_CHANNEL; ch = ch + 1) begin
+            for (i = 0; i < KERNEL_SIZE*KERNEL_SIZE; i = i + 1) begin
+                channel_mult_results[ch][i] <= 0;
+            end
+        end
+        stage1_valid <= 0;
     end else begin
-        //加法数第一层：将9个乘积组合成5个部分和
-        add_level1[0]<=mult_results[0]+mult_results[1];
-        add_level1[1]<=mult_results[2]+mult_results[3];
-        add_level1[2]<=mult_results[4]+mult_results[5];
-        add_level1[3]<=mult_results[6]+mult_results[7];
-        add_level1[4]<=mult_results[8];
-
-        stage2_valid<=stage1_valid;
+        // 并行执行所有通道的所有乘法
+        for (ch = 0; ch < IN_CHANNEL; ch = ch + 1) begin
+            for (i = 0; i < KERNEL_SIZE*KERNEL_SIZE; i = i + 1) begin
+                channel_mult_results[ch][i] <= channel_window_data[ch][i] * channel_weight_data[ch][i];
+            end
+        end
+        stage1_valid <= window_valid && weight_valid;
     end
 end
 
-//流水线阶段3：第二层加法树（5->3）
-always @(posedge clk or negedge rst_n)begin
-    if(!rst_n)begin
-        for(i=0;i<3;i=i+1)
-            add_level2[i]<=0;
-        stage3_valid<=0;
+// 流水线阶段2：每个通道内的累加
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        for (ch = 0; ch < IN_CHANNEL; ch = ch + 1) begin
+            channel_conv_results[ch] <= 0;
+        end
+        stage2_valid <= 0;
     end else begin
-        //加法树第二层，将5个部分组合成3个部分和
-        add_level2[0]<=add_level1[0]+add_level1[1];
-        add_level2[1]<=add_level1[2]+add_level1[3];
-        add_level2[2]<=add_level1[4];
-
-        stage3_valid<=stage2_valid;
+        // 每个通道内的卷积核乘积累加 - 通用于任意KERNEL_SIZE
+        for (ch = 0; ch < IN_CHANNEL; ch = ch + 1) begin
+            temp_channel_sum = 0;
+            for (i = 0; i < KERNEL_SIZE*KERNEL_SIZE; i = i + 1) begin
+                temp_channel_sum = temp_channel_sum + channel_mult_results[ch][i];
+            end
+            channel_conv_results[ch] <= temp_channel_sum;
+        end
+        stage2_valid <= stage1_valid;
     end
 end
 
-//最终阶段：第三层加法树（3->1）和输出
-always @(posedge clk or negedge rst_n)begin
-    if(!rst_n)begin
-        conv_out<=0;
-        conv_valid<=0;
+// 流水线阶段3：跨通道累加
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        partial_sum <= 0;
+        stage3_valid <= 0;
     end else begin
-        //直接计算最终结果并输出
-        if(stage3_valid)begin
-            temp_sum=add_level2[0]+add_level2[1]+add_level2[2];
-            conv_out<=temp_sum[2*DATA_WIDTH-1:0];
-            conv_valid<=1;
+        // 通用的跨通道累加 - 适用于任意IN_CHANNEL值
+        temp_sum = 0;
+        for (i = 0; i < IN_CHANNEL; i = i + 1) begin
+            temp_sum = temp_sum + channel_conv_results[i];
+        end
+        partial_sum <= temp_sum;
+        stage3_valid <= stage2_valid;
+    end
+end
+
+// 最终阶段：输出
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        conv_out <= 0;
+        conv_valid <= 0;
+    end else begin
+        if (stage3_valid) begin
+            // 饱和处理并输出
+            conv_out <= saturate(partial_sum);
+            conv_valid <= 1;
         end else begin
-            conv_out<=0;
-            conv_valid<=0;
+            conv_out <= 0;
+            conv_valid <= 0;
         end
     end
 end
 
-
-// 可选：饱和处理函数（防止溢出）
-function [2*DATA_WIDTH-1:0] saturate;
+// 饱和处理函数（防止溢出）
+function [DATA_WIDTH-1:0] saturate;
     input signed [ACC_WIDTH-1:0] value;
-    localparam signed [ACC_WIDTH-1:0] MAX_VAL = (1 << (2*DATA_WIDTH-1)) - 1;
-    localparam signed [ACC_WIDTH-1:0] MIN_VAL = -(1 << (2*DATA_WIDTH-1));
+    localparam signed [ACC_WIDTH-1:0] MAX_VAL = (1 << (DATA_WIDTH-1)) - 1;
+    localparam signed [ACC_WIDTH-1:0] MIN_VAL = -(1 << (DATA_WIDTH-1));
     begin
         if (value > MAX_VAL)
-            saturate = MAX_VAL[2*DATA_WIDTH-1:0];
+            saturate = MAX_VAL[DATA_WIDTH-1:0];
         else if (value < MIN_VAL)
-            saturate = MIN_VAL[2*DATA_WIDTH-1:0];
+            saturate = MIN_VAL[DATA_WIDTH-1:0];
         else
-            saturate = value[2*DATA_WIDTH-1:0];
+            saturate = value[DATA_WIDTH-1:0];
     end
 endfunction
 
-
-endmodule
-
-
+endmodule 

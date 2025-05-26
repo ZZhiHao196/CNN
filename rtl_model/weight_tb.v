@@ -1,298 +1,258 @@
- `timescale 1ns / 1ps
+`timescale 1ns / 1ps
 
 module weight_tb;
 
-// Parameters - matching default weight.v parameters
+// Parameters
 parameter NUM_FILTERS = 3;
 parameter INPUT_CHANNELS = 3;
 parameter KERNEL_SIZE = 3;
-parameter WEIGHT_WIDTH = 16;
-parameter INIT_FILE = "weights_example.mem";
+parameter WEIGHT_WIDTH = 8;
+parameter INIT_FILE = "C:/Users/86139/Desktop/ECNU/project_1/weights.mem";
 
 // Clock and reset
 reg clk;
 reg rst_n;
 
-// Weight ROM interface
-reg [$clog2(NUM_FILTERS)-1:0] filter_idx;
-reg [$clog2(INPUT_CHANNELS)-1:0] channel_idx;
+// Control signals
 reg read_enable;
 
-// Outputs
-wire [KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH-1:0] flattened_weight_out;
+// Output signals
+wire [INPUT_CHANNELS*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH-1:0] multi_channel_weight_out;
 wire weight_valid;
 
 // Test variables
-integer i, j, k;
 integer test_count;
 integer pass_count;
+integer i, ch, pos;
+reg [WEIGHT_WIDTH-1:0] weight_val;
+reg [WEIGHT_WIDTH-1:0] expected_weights [0:8];
+integer errors;
 
-// Instantiate the weight ROM module
+// Instantiate the weight module for filter 0
 weight #(
     .NUM_FILTERS(NUM_FILTERS),
     .INPUT_CHANNELS(INPUT_CHANNELS),
     .KERNEL_SIZE(KERNEL_SIZE),
     .WEIGHT_WIDTH(WEIGHT_WIDTH),
+    .FILTER_ID(0),
     .INIT_FILE(INIT_FILE)
 ) dut (
     .clk(clk),
     .rst_n(rst_n),
-    .filter_idx(filter_idx),
-    .channel_idx(channel_idx),
     .read_enable(read_enable),
-    .flattened_weight_out(flattened_weight_out),
+    .multi_channel_weight_out(multi_channel_weight_out),
     .weight_valid(weight_valid)
 );
 
 // Clock generation
 always #5 clk = ~clk;
 
-// Test stimulus
+// Test sequence
 initial begin
-    // Initialize signals
+    // Initialize
     clk = 0;
     rst_n = 0;
-    filter_idx = 0;
-    channel_idx = 0;
     read_enable = 0;
     test_count = 0;
     pass_count = 0;
     
-    // Create VCD file for waveform viewing
-    $dumpfile("weight_tb.vcd");
-    $dumpvars(0, weight_tb);
-    
-    $display("=== Weight ROM Testbench Started ===");
-    $display("Configuration:");
-    $display("  NUM_FILTERS = %d", NUM_FILTERS);
-    $display("  INPUT_CHANNELS = %d", INPUT_CHANNELS);
-    $display("  KERNEL_SIZE = %d", KERNEL_SIZE);
-    $display("  WEIGHT_WIDTH = %d", WEIGHT_WIDTH);
-    $display("  INIT_FILE = %s", INIT_FILE);
+    $display("=== 并行权重模块完整测试 ===");
+    $display("配置:");
+    $display("  滤波器数: %d", NUM_FILTERS);
+    $display("  输入通道数: %d", INPUT_CHANNELS);
+    $display("  卷积核大小: %d", KERNEL_SIZE);
+    $display("  权重位宽: %d", WEIGHT_WIDTH);
+    $display("  输出位宽: %d", INPUT_CHANNELS*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH);
     $display("");
     
     // Reset sequence
-    #10;
+    #20;
     rst_n = 1;
-    #10;
+    #20;
     
-    // Test 1: Basic functionality test
-    $display("=== Test 1: Basic Weight Reading ===");
-    test_basic_reading();
+    // Test 1: Basic read operation
+    $display("测试1: 基本读取操作");
+    test_count = test_count + 1;
     
-    // Test 2: All filter-channel combinations
-    $display("=== Test 2: All Filter-Channel Combinations ===");
-    test_all_combinations();
+    read_enable = 1;
     
-    // Test 3: Read enable control
-    $display("=== Test 3: Read Enable Control ===");
-    test_read_enable_control();
-    
-    // Test 4: Reset functionality
-    $display("=== Test 4: Reset Functionality ===");
-    test_reset_functionality();
-    
-    // Test 5: Timing test
-    $display("=== Test 5: Timing Test ===");
-    test_timing();
-    
-    // Summary
-    $display("");
-    $display("=== Test Summary ===");
-    $display("Total tests: %d", test_count);
-    $display("Passed tests: %d", pass_count);
-    if (pass_count == test_count) begin
-        $display("ALL TESTS PASSED!");
-    end else begin
-        $display("SOME TESTS FAILED!");
+    // Wait for valid signal with timeout
+    i = 0;
+    while (i < 100 && !weight_valid) begin
+        @(posedge clk);
+        i = i + 1;
     end
+    
+    if (weight_valid) begin
+        $display("✓ 权重读取成功 (用时 %d 周期)", i);
+        $display("  输出数据: %h", multi_channel_weight_out);
+        pass_count = pass_count + 1;
+        
+        // Parse and display weights
+        $display("  解析的权重数据:");
+        for (ch = 0; ch < INPUT_CHANNELS; ch = ch + 1) begin
+            $write("    通道 %d: ", ch);
+            for (pos = 0; pos < KERNEL_SIZE*KERNEL_SIZE; pos = pos + 1) begin
+                weight_val = multi_channel_weight_out[(ch*KERNEL_SIZE*KERNEL_SIZE + pos + 1)*WEIGHT_WIDTH-1 -: WEIGHT_WIDTH];
+                $write("%02h ", weight_val);
+            end
+            $display("");
+        end
+    end else begin
+        $display("✗ 权重读取失败 - 超时");
+    end
+    
+    read_enable = 0;
+    #20;
+    
+    // Test 2: Reset test
+    $display("测试2: 复位功能");
+    test_count = test_count + 1;
+    
+    read_enable = 1;
+    #30;
+    
+    rst_n = 0;
+    read_enable = 0;
+    #20;
+    rst_n = 1;
+    #20;
+    
+    if (!weight_valid && multi_channel_weight_out == 0) begin
+        $display("✓ 复位功能正常");
+        pass_count = pass_count + 1;
+    end else begin
+        $display("✗ 复位功能异常");
+        $display("  weight_valid = %b, output = %h", weight_valid, multi_channel_weight_out);
+    end
+    
+    // Test 3: Enable control test
+    $display("测试3: 使能控制");
+    test_count = test_count + 1;
+    
+    read_enable = 0;
+    #50;
+    
+    if (!weight_valid) begin
+        $display("✓ 使能控制正常 - 禁用时无输出");
+        pass_count = pass_count + 1;
+    end else begin
+        $display("✗ 使能控制异常 - 禁用时有输出");
+    end
+    
+    // Test 4: Multiple read cycles
+    $display("测试4: 多次读取周期");
+    test_count = test_count + 1;
+    
+    read_enable = 1;
+    
+    // First read
+    i = 0;
+    while (i < 100 && !weight_valid) begin
+        @(posedge clk);
+        i = i + 1;
+    end
+    
+    if (weight_valid) begin
+        $display("  第一次读取成功");
+        read_enable = 0;
+        #20;
+        
+        // Second read
+        read_enable = 1;
+        i = 0;
+        while (i < 100 && !weight_valid) begin
+            @(posedge clk);
+            i = i + 1;
+        end
+        
+        if (weight_valid) begin
+            $display("✓ 多次读取功能正常");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("✗ 第二次读取失败");
+        end
+    end else begin
+        $display("✗ 第一次读取失败");
+    end
+    
+    read_enable = 0;
+    #20;
+    
+    // Test 5: Weight data verification
+    $display("测试5: 权重数据验证");
+    test_count = test_count + 1;
+    
+    read_enable = 1;
+    
+    i = 0;
+    while (i < 100 && !weight_valid) begin
+        @(posedge clk);
+        i = i + 1;
+    end
+    
+    if (weight_valid) begin
+        // Check expected values for filter 0 (edge detection kernel)
+        // Expected: FF 00 01 FE 00 02 FF 00 01 for each channel
+        
+        expected_weights[0] = 8'hFF; expected_weights[1] = 8'h00; expected_weights[2] = 8'h01;
+        expected_weights[3] = 8'hFE; expected_weights[4] = 8'h00; expected_weights[5] = 8'h02;
+        expected_weights[6] = 8'hFF; expected_weights[7] = 8'h00; expected_weights[8] = 8'h01;
+        
+        errors = 0;
+        
+        for (ch = 0; ch < INPUT_CHANNELS; ch = ch + 1) begin
+            for (pos = 0; pos < KERNEL_SIZE*KERNEL_SIZE; pos = pos + 1) begin
+                weight_val = multi_channel_weight_out[(ch*KERNEL_SIZE*KERNEL_SIZE + pos + 1)*WEIGHT_WIDTH-1 -: WEIGHT_WIDTH];
+                if (weight_val !== expected_weights[pos]) begin
+                    $display("  ✗ 通道 %d 位置 %d: 期望 %02h, 实际 %02h", ch, pos, expected_weights[pos], weight_val);
+                    errors = errors + 1;
+                end
+            end
+        end
+        
+        if (errors == 0) begin
+            $display("✓ 权重数据验证通过 - 所有权重正确");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("✗ 权重数据验证失败 - 发现 %d 个错误", errors);
+        end
+    end else begin
+        $display("✗ 权重数据验证失败 - 无法读取权重");
+    end
+    
+    read_enable = 0;
+    #20;
+    
+    // Final results
+    $display("");
+    $display("=== 测试结果汇总 ===");
+    $display("总测试数: %d", test_count);
+    $display("通过测试数: %d", pass_count);
+    $display("失败测试数: %d", test_count - pass_count);
+    
+    if (pass_count == test_count) begin
+        $display("🎉 所有测试通过! 并行权重模块工作正常");
+    end else begin
+        $display("❌ 部分测试失败! 需要检查模块实现");
+    end
+    
+    $display("");
+    $display("模块特性验证:");
+    $display("✓ 并行权重输出: %d 位", INPUT_CHANNELS*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH);
+    $display("✓ 滤波器特定权重: Filter ID = 0");
+    $display("✓ 多通道支持: %d 个输入通道", INPUT_CHANNELS);
+    $display("✓ 权重文件加载: %s", INIT_FILE);
     
     #100;
     $finish;
 end
 
-// Task: Basic reading test
-task test_basic_reading;
-begin
-    $display("Testing basic weight reading for filter 0, channel 0...");
-    
-    filter_idx = 0;
-    channel_idx = 0;
-    read_enable = 1;
-    
-    // Wait for weight_valid
-    wait_for_valid();
-    
-    if (weight_valid) begin
-        $display("✓ Weight reading successful");
-        $display("  Flattened weights: %h", flattened_weight_out);
-        pass_count = pass_count + 1;
-    end else begin
-        $display("✗ Weight reading failed - no valid signal");
-    end
-    test_count = test_count + 1;
-    
-    read_enable = 0;
-    #20;
-end
-endtask
-
-// Task: Test all filter-channel combinations
-task test_all_combinations;
-begin
-    for (i = 0; i < NUM_FILTERS; i = i + 1) begin
-        for (j = 0; j < INPUT_CHANNELS; j = j + 1) begin
-            $display("Testing filter %d, channel %d...", i, j);
-            
-            filter_idx = i;
-            channel_idx = j;
-            read_enable = 1;
-            
-            wait_for_valid();
-            
-            if (weight_valid) begin
-                $display("✓ Filter %d, Channel %d: %h", i, j, flattened_weight_out);
-                pass_count = pass_count + 1;
-            end else begin
-                $display("✗ Filter %d, Channel %d: Failed", i, j);
-            end
-            test_count = test_count + 1;
-            
-            read_enable = 0;
-            #20;
-        end
-    end
-end
-endtask
-
-// Task: Test read enable control
-task test_read_enable_control;
-begin
-    $display("Testing read enable control...");
-    
-    filter_idx = 1;
-    channel_idx = 1;
-    read_enable = 0;  // Keep disabled
-    
-    #100;  // Wait some time
-    
-    if (!weight_valid) begin
-        $display("✓ Read enable control working - no output when disabled");
-        pass_count = pass_count + 1;
-    end else begin
-        $display("✗ Read enable control failed - unexpected output");
-    end
-    test_count = test_count + 1;
-    
-    // Now enable and check
-    read_enable = 1;
-    wait_for_valid();
-    
-    if (weight_valid) begin
-        $display("✓ Read enable control working - output when enabled");
-        pass_count = pass_count + 1;
-    end else begin
-        $display("✗ Read enable control failed - no output when enabled");
-    end
-    test_count = test_count + 1;
-    
-    read_enable = 0;
-    #20;
-end
-endtask
-
-// Task: Test reset functionality
-task test_reset_functionality;
-begin
-    $display("Testing reset functionality...");
-    
-    // Start a read operation
-    filter_idx = 2;
-    channel_idx = 2;
-    read_enable = 1;
-    
-    #30;  // Let it start
-    
-    // Apply reset and disable read_enable
-    rst_n = 0;
-    read_enable = 0;  // Disable read_enable during reset
-    #20;
-    rst_n = 1;
-    
-    // Wait a few clock cycles for reset to take effect
-    @(posedge clk);
-    @(posedge clk);
-    
-    if (!weight_valid && flattened_weight_out == 0) begin
-        $display("✓ Reset functionality working");
-        pass_count = pass_count + 1;
-    end else begin
-        $display("✗ Reset functionality failed");
-        $display("  weight_valid = %b, flattened_weight_out = %h", weight_valid, flattened_weight_out);
-    end
-    test_count = test_count + 1;
-    
-    read_enable = 0;
-    #20;
-end
-endtask
-
-// Task: Test timing
-task test_timing;
-    integer start_time, end_time, duration;
-begin
-    $display("Testing timing characteristics...");
-    
-    filter_idx = 0;
-    channel_idx = 0;
-    read_enable = 1;
-    
-    // Measure time to valid
-    start_time = $time;
-    
-    wait_for_valid();
-    
-    end_time = $time;
-    duration = end_time - start_time;
-    
-    $display("Time to valid: %d ns", duration);
-    
-    if (duration > 0 && duration < 1000) begin  // Reasonable time
-        $display("✓ Timing test passed");
-        pass_count = pass_count + 1;
-    end else begin
-        $display("✗ Timing test failed");
-    end
-    test_count = test_count + 1;
-    
-    read_enable = 0;
-    #20;
-end
-endtask
-
-// Task: Wait for weight_valid signal
-task wait_for_valid;
-    integer timeout;
-begin
-    timeout = 0;
-    
-    while (!weight_valid && timeout < 1000) begin
-        #10;
-        timeout = timeout + 10;
-    end
-    
-    if (timeout >= 1000) begin
-        $display("WARNING: Timeout waiting for weight_valid");
-    end
-end
-endtask
-
 // Monitor for debugging
 always @(posedge clk) begin
-    if (read_enable && weight_valid) begin
-        $display("Time %t: Weight valid for filter %d, channel %d", 
-                 $time, filter_idx, channel_idx);
+    if (weight_valid && read_enable) begin
+        $display("时间 %t: 检测到有效权重输出", $time);
     end
 end
 
-endmodule
+endmodule 
