@@ -58,7 +58,7 @@ always @(posedge clk or negedge rst_n) begin
         read_idx <= 0;
         base_addr <= 0;
     end else begin
-        if(read_enable && !reading_weights) begin
+        if(read_enable && !reading_weights && !weight_valid) begin
             reading_weights <= 1;
             read_idx <= 0;
             weight_valid <= 0;

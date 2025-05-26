@@ -1,107 +1,91 @@
-// 并行CNN权重文件 - 3个滤波器，3个输入通道，3x3卷积核
-// 格式: 每行一个权重值 (8位十六进制)
-// 组织: Filter0_Channel0 (9个权重), Filter0_Channel1 (9个权重), Filter0_Channel2 (9个权重),
-//       Filter1_Channel0 (9个权重), Filter1_Channel1 (9个权重), Filter1_Channel2 (9个权重),
-//       Filter2_Channel0 (9个权重), Filter2_Channel1 (9个权重), Filter2_Channel2 (9个权重)
-// 
-// 每个滤波器的权重按通道顺序排列，每个通道内按3x3矩阵的行优先顺序排列
-// 权重索引计算: base_addr = filter_id * 27 + channel_id * 9 + position
-
-// Filter 0, Channel 0 - 边缘检测核 (Sobel X)
-FF
+// Simple test weights for 3 filters, 3 channels, 3x3 kernel
+// Filter 0, Channel 0 (9 weights)
+01
 00
 01
-FE
+00
+01
+00
+01
+00
+01
+// Filter 0, Channel 1 (9 weights)
+00
+01
+00
+01
+02
+01
+00
+01
+00
+// Filter 0, Channel 2 (9 weights)
+01
+01
+01
+01
+01
+01
+01
+01
+01
+// Filter 1, Channel 0 (9 weights)
+02
 00
 02
-FF
-00
-01
-
-// Filter 0, Channel 1 - 边缘检测核 (Sobel X)
-FF
-00
-01
-FE
 00
 02
-FF
-00
-01
-
-// Filter 0, Channel 2 - 边缘检测核 (Sobel X)
-FF
-00
-01
-FE
 00
 02
-FF
 00
-01
-
-// Filter 1, Channel 0 - 模糊核
-01
-01
-01
-01
-01
-01
-01
-01
-01
-
-// Filter 1, Channel 1 - 模糊核
-01
-01
-01
-01
-01
-01
-01
-01
-01
-
-// Filter 1, Channel 2 - 模糊核
-01
-01
-01
-01
-01
-01
-01
-01
-01
-
-// Filter 2, Channel 0 - 锐化核
+02
+// Filter 1, Channel 1 (9 weights)
 00
-FF
+02
 00
-FF
-05
-FF
+02
+04
+02
 00
-FF
+02
 00
-
-// Filter 2, Channel 1 - 锐化核
+// Filter 1, Channel 2 (9 weights)
+02
+02
+02
+02
+02
+02
+02
+02
+02
+// Filter 2, Channel 0 (9 weights)
+03
 00
-FF
+03
 00
-FF
-05
-FF
+03
 00
-FF
+03
 00
-
-// Filter 2, Channel 2 - 锐化核
+03
+// Filter 2, Channel 1 (9 weights)
 00
-FF
+03
 00
-FF
-05
-FF
+03
+06
+03
 00
-FF
-00 
+03
+00
+// Filter 2, Channel 2 (9 weights)
+03
+03
+03
+03
+03
+03
+03
+03
+03 
