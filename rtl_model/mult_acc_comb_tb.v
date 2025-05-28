@@ -6,18 +6,19 @@ parameter DATA_WIDTH = 8;
 parameter KERNEL_SIZE = 3;
 parameter IN_CHANNEL = 3;
 parameter WEIGHT_WIDTH = 8;
-parameter ACC_WIDTH = 2*DATA_WIDTH + 4;
+parameter OUTPUT_WIDTH = 20;  // 增加输出位宽参数
+parameter ACC_WIDTH = 2*DATA_WIDTH + 4 + $clog2(KERNEL_SIZE*KERNEL_SIZE*IN_CHANNEL);
 
 reg window_valid;
 reg [IN_CHANNEL*KERNEL_SIZE*KERNEL_SIZE*DATA_WIDTH-1:0] multi_channel_window_in;
 reg weight_valid;
 reg [IN_CHANNEL*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH-1:0] multi_channel_weight_in;
 
-wire [DATA_WIDTH-1:0] conv_out;
+wire [OUTPUT_WIDTH-1:0] conv_out;
 wire conv_valid;
 
-// Localparams for saturation (UNSIGNED) - Assuming previous corrections for unsigned are intended
-localparam MAX_UNSIGNED_OUT_VAL = (1 << DATA_WIDTH) - 1;
+// Localparams for saturation (UNSIGNED) - 使用新的OUTPUT_WIDTH
+localparam MAX_UNSIGNED_OUT_VAL = (1 << OUTPUT_WIDTH) - 1;
 
 // Example: Test 2 raw sum for unsigned context
 localparam EXPECTED_SUM_TEST2_UNSIGNED_RAW = 3 * 9 * 2 * 3; // 162
@@ -30,6 +31,7 @@ mult_acc_comb #(
     .KERNEL_SIZE(KERNEL_SIZE),
     .IN_CHANNEL(IN_CHANNEL),
     .WEIGHT_WIDTH(WEIGHT_WIDTH),
+    .OUTPUT_WIDTH(OUTPUT_WIDTH),
     .ACC_WIDTH(ACC_WIDTH)
 ) dut (
     .window_valid(window_valid),
@@ -46,7 +48,7 @@ integer num_errors;
 
 // Task to check results and display Expected/Actual for all
 task check_and_report;
-    input [DATA_WIDTH-1:0] expected_out_val;
+    input [OUTPUT_WIDTH-1:0] expected_out_val;
     input expected_valid_val;
     // Test description is displayed before calling this task
     begin
@@ -57,7 +59,7 @@ task check_and_report;
         $display("    Actual:   conv_valid=%b, conv_out=%d", conv_valid, conv_out);
 
         if (conv_valid === expected_valid_val &&
-            ( (expected_valid_val === 1'b0) ? (conv_out === {DATA_WIDTH{1'b0}}) : (conv_out === expected_out_val) ) ) begin
+            ( (expected_valid_val === 1'b0) ? (conv_out === {OUTPUT_WIDTH{1'b0}}) : (conv_out === expected_out_val) ) ) begin
             $display("    Test ID %0d: Status: PASSED", test_id_counter);
         end else begin
             $display("    Test ID %0d: Status: FAILED", test_id_counter);
@@ -69,7 +71,7 @@ task check_and_report;
 endtask
 
 initial begin
-    $display("=== Comprehensive UNSIGNED Combinational MultAcc Test ===");
+    $display("=== Comprehensive UNSIGNED Combinational MultAcc Test (OUTPUT_WIDTH=%0d) ===", OUTPUT_WIDTH);
     all_tests_passed_flag = 1'b1; 
     test_id_counter = 0;
     num_errors = 0;
@@ -141,20 +143,30 @@ initial begin
     #10;
     
     // Test 7
-    $display("Test Description: Saturation to MAX_UNSIGNED_OUT_VAL (%0d)", MAX_UNSIGNED_OUT_VAL);
+    $display("Test Description: Large values (no saturation with 20-bit output)");
     multi_channel_window_in = {27{8'd5}}; 
     multi_channel_weight_in = {27{8'd5}}; 
     #1;
-    check_and_report(MAX_UNSIGNED_OUT_VAL, 1'b1);
+    check_and_report(27*5*5, 1'b1);  // 27*25 = 675, well within 20-bit range
 
     #10;
     
     // Test 8
-    $display("Test Description: Max Val Inputs (Win=%d, Wgt=%d), saturate to %d", MAX_ELEMENT_VAL_TB, MAX_WEIGHT_ELEMENT_VAL_TB, MAX_UNSIGNED_OUT_VAL);
+    $display("Test Description: Max Val Inputs (Win=%d, Wgt=%d), should saturate to %d", MAX_ELEMENT_VAL_TB, MAX_WEIGHT_ELEMENT_VAL_TB, MAX_UNSIGNED_OUT_VAL);
     multi_channel_window_in = {27{{DATA_WIDTH{1'b1}}}};
     multi_channel_weight_in = {27{{WEIGHT_WIDTH{1'b1}}}};
     #1;
+    // 27 * 255 * 255 = 1,759,725, which exceeds 20-bit max (1,048,575), so should saturate
     check_and_report(MAX_UNSIGNED_OUT_VAL, 1'b1);
+
+    #10;
+    
+    // Test 8.5: Test 20-bit range capability
+    $display("Test Description: Medium values to test 20-bit range (100*100, sum 270000)");
+    multi_channel_window_in = {27{8'd100}}; 
+    multi_channel_weight_in = {27{8'd100}}; 
+    #1;
+    check_and_report(27*100*100, 1'b1);  // 27*10000 = 270000, well within 20-bit range
 
     #10;
 

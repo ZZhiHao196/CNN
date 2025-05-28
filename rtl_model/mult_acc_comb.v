@@ -4,6 +4,7 @@ module mult_acc_comb #(
     parameter KERNEL_SIZE = 3,
     parameter IN_CHANNEL = 3,
     parameter WEIGHT_WIDTH = 8,
+    parameter OUTPUT_WIDTH = 20,  // 可配置的输出位宽
     parameter ACC_WIDTH = 2*DATA_WIDTH + 4 + $clog2(KERNEL_SIZE*KERNEL_SIZE*IN_CHANNEL) // Ensure ACC_WIDTH is sufficient
 )(
     // 输入数据接口
@@ -13,7 +14,7 @@ module mult_acc_comb #(
     input [IN_CHANNEL*KERNEL_SIZE*KERNEL_SIZE*WEIGHT_WIDTH-1:0] multi_channel_weight_in,
 
     // 输出数据接口
-    output [DATA_WIDTH-1:0] conv_out, // UNSIGNED
+    output [OUTPUT_WIDTH-1:0] conv_out, // 使用可配置的输出位宽
     output conv_valid
 );
 
@@ -93,18 +94,18 @@ endgenerate
 
 // 输出逻辑 - 组合逻辑
 assign conv_valid = window_valid && weight_valid;
-assign conv_out = conv_valid ? saturate(total_sum) : {DATA_WIDTH{1'b0}};
+assign conv_out = conv_valid ? saturate(total_sum) : {OUTPUT_WIDTH{1'b0}};
 
 // 饱和处理函数（组合逻辑）- UNSIGNED
-function [DATA_WIDTH-1:0] saturate;
+function [OUTPUT_WIDTH-1:0] saturate;
     input [ACC_WIDTH-1:0] value; // UNSIGNED
-    localparam [ACC_WIDTH-1:0] MAX_UNSIGNED_VAL_SAT = (1 << DATA_WIDTH) - 1;
+    localparam [ACC_WIDTH-1:0] MAX_UNSIGNED_VAL_SAT = (1 << OUTPUT_WIDTH) - 1;
     // MIN_UNSIGNED_VAL is 0
     begin
         if (value > MAX_UNSIGNED_VAL_SAT)
-            saturate = MAX_UNSIGNED_VAL_SAT[DATA_WIDTH-1:0]; // Ensure slicing from ACC_WIDTH to DATA_WIDTH
+            saturate = MAX_UNSIGNED_VAL_SAT[OUTPUT_WIDTH-1:0]; // 使用OUTPUT_WIDTH进行截取
         else
-            saturate = value[DATA_WIDTH-1:0]; // Ensure slicing
+            saturate = value[OUTPUT_WIDTH-1:0]; // 使用OUTPUT_WIDTH进行截取
     end
 endfunction
 

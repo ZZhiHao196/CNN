@@ -4,8 +4,8 @@ module window_tb();
 
     // 测试用参数 - 使用小尺寸便于观察
     parameter DATA_WIDTH = 8;
-    parameter IMG_WIDTH = 5;
-    parameter IMG_HEIGHT = 5;
+    parameter IMG_WIDTH = 32;
+    parameter IMG_HEIGHT = 32;
     parameter KERNEL_SIZE = 3;
     parameter STRIDE = 1;
     parameter PADDING = (KERNEL_SIZE - 1) / 2;

@@ -43,7 +43,7 @@ always @(*) begin
     case (current_state)
         IDLE:    next_state = frame_start ? LOAD : IDLE;
         LOAD:    next_state = (y_pos >= KERNEL_SIZE-1) ? PROCESS : LOAD;
-        PROCESS: next_state = (y_window >= IMG_HEIGHT) ? IDLE : PROCESS;
+        PROCESS: next_state = (y_window >= IMG_HEIGHT && x_window == 0) ? IDLE : PROCESS;
         default: next_state = IDLE;
     endcase
 end
@@ -73,10 +73,10 @@ always @(posedge clk or negedge rst_n) begin
             for (j = 0; j < IMG_WIDTH + 2*PADDING; j = j + 1)
                 line_buffer[i][j] <= 0;
     end else if (pixel_valid && current_state != IDLE) begin
-        if (x_pos == 0) begin
+                if (x_pos == 0) begin
             // Clear the line buffer row at the start of each new line
             for (k = 0; k < IMG_WIDTH + 2*PADDING; k = k + 1)
-                line_buffer[y_pos % (KERNEL_SIZE + 1)][k] <= 0;
+                        line_buffer[y_pos % (KERNEL_SIZE + 1)][k] <= 0;
         end
         line_buffer[y_pos % (KERNEL_SIZE + 1)][x_pos + PADDING] <= pixel_in;
     end
@@ -84,22 +84,16 @@ end
 
 // Window position tracking
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        x_window <= 0;
-        y_window <= 0;
-    end else if (current_state == IDLE && frame_start) begin
-        x_window <= 0;
-        y_window <= 0;
-    end else if (current_state == LOAD && next_state == PROCESS) begin
+    if (!rst_n || frame_start || (current_state == LOAD && next_state == PROCESS)) begin
         x_window <= 0;
         y_window <= 0;
     end else if (current_state == PROCESS && y_window < IMG_HEIGHT) begin
         if (x_window + STRIDE >= IMG_WIDTH) begin
-            x_window <= 0;
-            y_window <= y_window + STRIDE;
-        end else begin
-            x_window <= x_window + STRIDE;
-        end
+                    x_window <= 0;
+                    y_window <= y_window + STRIDE;
+                end else begin
+                    x_window <= x_window + STRIDE;
+                end
     end
 end
 
@@ -116,7 +110,7 @@ always @(posedge clk or negedge rst_n) begin
         if (current_state == PROCESS && 
             x_window < IMG_WIDTH && 
             y_window < IMG_HEIGHT && 
-            (y_window + (KERNEL_SIZE>>1) <= y_pos || y_pos >= IMG_HEIGHT)) begin
+            y_window + (KERNEL_SIZE>>1) <= y_pos) begin
             
             // Generate window
             for (i = 0; i < KERNEL_SIZE; i = i + 1) begin
@@ -127,13 +121,13 @@ always @(posedge clk or negedge rst_n) begin
                     if (src_y >= 0 && src_y < IMG_HEIGHT && 
                         src_x >= 0 && src_x < IMG_WIDTH) begin
                         window_buffer[i][j] <= line_buffer[src_y % (KERNEL_SIZE + 1)][src_x + PADDING];
-                    end else begin
+                        end else begin
                         window_buffer[i][j] <= 0; // Padding
+                        end
                     end
                 end
-            end
-            window_valid <= 1;
-        end
+                window_valid <= 1;
+            end 
     end
 end
 
@@ -141,7 +135,7 @@ end
 always @(*) begin
     for (i = 0; i < KERNEL_SIZE; i = i + 1) begin
         for (j = 0; j < KERNEL_SIZE; j = j + 1) begin
-            window_out[(KERNEL_SIZE*KERNEL_SIZE-(i*KERNEL_SIZE+j))*DATA_WIDTH-1 -: DATA_WIDTH] = window_buffer[i][j];
+            window_out[(i*KERNEL_SIZE+j+1)*DATA_WIDTH-1 -: DATA_WIDTH] = window_buffer[i][j];
         end
     end
 end
