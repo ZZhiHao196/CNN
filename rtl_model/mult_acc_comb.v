@@ -18,6 +18,9 @@ module mult_acc_comb #(
     output conv_valid
 );
 
+// 计算权重相关参数
+localparam WEIGHTS_PER_FILTER = IN_CHANNEL * KERNEL_SIZE * KERNEL_SIZE;
+
 // 解包后的多通道窗口数据和权重数据
 wire [DATA_WIDTH-1:0] channel_window_data [0:IN_CHANNEL-1][0:KERNEL_SIZE*KERNEL_SIZE-1]; // UNSIGNED
 wire [WEIGHT_WIDTH-1:0] channel_weight_data [0:IN_CHANNEL-1][0:KERNEL_SIZE*KERNEL_SIZE-1]; // UNSIGNED
@@ -42,9 +45,9 @@ generate
             assign channel_window_data[ch][i_idx] = multi_channel_window_in[
                 (ch*KERNEL_SIZE*KERNEL_SIZE + i_idx)*DATA_WIDTH +: DATA_WIDTH // Corrected indexing
             ];
-            // 解包权重数据
+            // 解包权重数据 - 修正位序以匹配weight.v的打包顺序
             assign channel_weight_data[ch][i_idx] = multi_channel_weight_in[
-                (ch*KERNEL_SIZE*KERNEL_SIZE + i_idx)*WEIGHT_WIDTH +: WEIGHT_WIDTH // Corrected indexing
+                (WEIGHTS_PER_FILTER - 1 - (ch*KERNEL_SIZE*KERNEL_SIZE + i_idx))*WEIGHT_WIDTH +: WEIGHT_WIDTH
             ];
         end
     end

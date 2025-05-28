@@ -43,7 +43,7 @@ always @(*) begin
     case (current_state)
         IDLE:    next_state = frame_start ? LOAD : IDLE;
         LOAD:    next_state = (y_pos >= KERNEL_SIZE-1) ? PROCESS : LOAD;
-        PROCESS: next_state = (y_window >= IMG_HEIGHT) ? IDLE : PROCESS;
+        PROCESS: next_state = (y_window >= IMG_HEIGHT && x_window == 0) ? IDLE : PROCESS;
         default: next_state = IDLE;
     endcase
 end
@@ -84,13 +84,7 @@ end
 
 // Window position tracking
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        x_window <= 0;
-        y_window <= 0;
-    end else if (current_state == IDLE && frame_start) begin
-        x_window <= 0;
-        y_window <= 0;
-    end else if (current_state == LOAD && next_state == PROCESS) begin
+    if (!rst_n || frame_start || (current_state == LOAD && next_state == PROCESS)) begin
         x_window <= 0;
         y_window <= 0;
     end else if (current_state == PROCESS && y_window < IMG_HEIGHT) begin
@@ -116,7 +110,7 @@ always @(posedge clk or negedge rst_n) begin
         if (current_state == PROCESS && 
             x_window < IMG_WIDTH && 
             y_window < IMG_HEIGHT && 
-            (y_window + (KERNEL_SIZE>>1) <= y_pos || y_pos >= IMG_HEIGHT)) begin
+            y_window + (KERNEL_SIZE>>1) <= y_pos) begin
             
             // Generate window
             for (i = 0; i < KERNEL_SIZE; i = i + 1) begin
